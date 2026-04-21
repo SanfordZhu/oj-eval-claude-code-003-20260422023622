@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <sstream>
 #include <unordered_map>
-#include <cstring>
 
 using namespace std;
 
@@ -250,10 +249,6 @@ struct Competition {
                 }
             }
 
-            // Debug output
-            // cerr << "DEBUG: Unfreezing team " << teams[lowestTeam].name
-            //      << " problem " << char('A' + lowestProblem) << endl;
-
             if (!found) break;
 
             // Store old ranking for comparison
@@ -268,9 +263,6 @@ struct Competition {
 
             Team& team = teams[lowestTeam];
             ProblemStatus& prob = team.problems[lowestProblem];
-
-            // Debug output
-            // cerr << "DEBUG: " << team.name << " was at rank " << oldRankPos << endl;
 
             prob.frozen = false;
 
@@ -333,10 +325,6 @@ struct Competition {
                     cout << team.name << " " << displacedTeam << " " << team.solvedCount << " " << team.totalPenalty << "\n";
                 }
             }
-
-            // Debug output
-            // cerr << "DEBUG: " << team.name << " moved from rank " << oldRankPos
-            //      << " to " << newRankPos << ", displaced: " << (newRankPos < oldRankPos ? "yes" : "no") << endl;
         }
 
         flush();
