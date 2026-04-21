@@ -2,21 +2,15 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <set>
 #include <algorithm>
 #include <sstream>
 #include <unordered_map>
+#include <cstring>
 
 using namespace std;
 
-struct Submission {
-    string problem;
-    string team;
-    string status;
-    int time;
-
-    Submission(string p, string t, string s, int time) : problem(p), team(t), status(s), time(time) {}
-};
+const int MAX_TEAMS = 10005;
+const int MAX_PROBLEMS = 30;
 
 struct ProblemStatus {
     int wrongAttempts = 0;
@@ -28,14 +22,45 @@ struct ProblemStatus {
 
 struct Team {
     string name;
-    map<string, ProblemStatus> problems;
+    ProblemStatus problems[MAX_PROBLEMS];
     int solvedCount = 0;
     int totalPenalty = 0;
     vector<int> solveTimes;
     bool exists = false;
+    int id;
 
     Team() {}
-    Team(string n) : name(n), exists(true) {}
+    Team(const string& n, int i) : name(n), exists(true), id(i) {}
+
+    bool operator<(const Team& other) const {
+        if (solvedCount != other.solvedCount) {
+            return solvedCount > other.solvedCount;
+        }
+
+        if (totalPenalty != other.totalPenalty) {
+            return totalPenalty < other.totalPenalty;
+        }
+
+        int n = min(solveTimes.size(), other.solveTimes.size());
+        for (int i = 0; i < n; i++) {
+            int idx1 = solveTimes.size() - 1 - i;
+            int idx2 = other.solveTimes.size() - 1 - i;
+            if (solveTimes[idx1] != other.solveTimes[idx2]) {
+                return solveTimes[idx1] < other.solveTimes[idx2];
+            }
+        }
+
+        return name < other.name;
+    }
+};
+
+struct Submission {
+    int problem;
+    int team;
+    string status;
+    int time;
+
+    Submission(int p, int t, const string& s, int time) : problem(p), team(t), status(s), time(time) {}
 };
 
 struct Competition {
@@ -44,20 +69,37 @@ struct Competition {
     int duration = 0;
     int problemCount = 0;
     bool frozen = false;
-    vector<string> problemNames;
-    map<string, Team> teams;
+
+    Team teams[MAX_TEAMS];
     vector<Submission> submissions;
+    unordered_map<string, int> teamMap;
+    int teamCount = 0;
+
+    vector<int> ranking;
+    bool rankingValid = false;
+
+    int getTeamId(const string& name) {
+        auto it = teamMap.find(name);
+        if (it != teamMap.end()) {
+            return it->second;
+        }
+        return -1;
+    }
 
     void addTeam(const string& teamName) {
         if (started) {
             cout << "[Error]Add failed: competition has started.\n";
             return;
         }
-        if (teams.find(teamName) != teams.end()) {
+        if (teamMap.find(teamName) != teamMap.end()) {
             cout << "[Error]Add failed: duplicated team name.\n";
             return;
         }
-        teams[teamName] = Team(teamName);
+
+        int id = teamCount++;
+        teams[id] = Team(teamName, id);
+        teamMap[teamName] = id;
+        rankingValid = false;
         cout << "[Info]Add successfully.\n";
     }
 
@@ -69,21 +111,22 @@ struct Competition {
         started = true;
         duration = dur;
         problemCount = probCount;
-
-        problemNames.clear();
-        for (int i = 0; i < probCount; i++) {
-            problemNames.push_back(string(1, 'A' + i));
-        }
         cout << "[Info]Competition starts.\n";
     }
 
     void submit(const string& problem, const string& teamName, const string& status, int time) {
         if (!started || ended) return;
 
-        submissions.push_back(Submission(problem, teamName, status, time));
+        int teamId = getTeamId(teamName);
+        if (teamId == -1) return;
 
-        Team& team = teams[teamName];
-        ProblemStatus& prob = team.problems[problem];
+        int probId = problem[0] - 'A';
+        if (probId < 0 || probId >= problemCount) return;
+
+        submissions.emplace_back(probId, teamId, status, time);
+
+        Team& team = teams[teamId];
+        ProblemStatus& prob = team.problems[probId];
 
         if (frozen && !prob.solved && !prob.frozen) {
             prob.frozen = true;
@@ -98,86 +141,60 @@ struct Competition {
                 team.solvedCount++;
                 team.totalPenalty += 20 * prob.wrongAttempts + time;
                 team.solveTimes.push_back(time);
+                rankingValid = false;
             } else {
                 prob.wrongAttempts++;
             }
         }
     }
 
-    vector<pair<Team*, int>> calculateRanking() {
-        vector<pair<Team*, int>> ranking;
-        for (auto& [name, team] : teams) {
-            if (team.exists) {
-                ranking.push_back({&team, 0});
+    void calculateRanking() {
+        if (rankingValid) return;
+
+        ranking.clear();
+        for (int i = 0; i < teamCount; i++) {
+            if (teams[i].exists) {
+                ranking.push_back(i);
             }
         }
 
         if (!started) {
-            sort(ranking.begin(), ranking.end(), [](const auto& a, const auto& b) {
-                return a.first->name < b.first->name;
+            sort(ranking.begin(), ranking.end(), [this](int a, int b) {
+                return teams[a].name < teams[b].name;
             });
         } else {
-            sort(ranking.begin(), ranking.end(), [](const auto& a, const auto& b) {
-                Team* ta = a.first;
-                Team* tb = b.first;
-
-                if (ta->solvedCount != tb->solvedCount) {
-                    return ta->solvedCount > tb->solvedCount;
-                }
-
-                if (ta->totalPenalty != tb->totalPenalty) {
-                    return ta->totalPenalty < tb->totalPenalty;
-                }
-
-                int n = min(ta->solveTimes.size(), tb->solveTimes.size());
-                for (int i = 0; i < n; i++) {
-                    int idx1 = ta->solveTimes.size() - 1 - i;
-                    int idx2 = tb->solveTimes.size() - 1 - i;
-                    if (ta->solveTimes[idx1] != tb->solveTimes[idx2]) {
-                        return ta->solveTimes[idx1] < tb->solveTimes[idx2];
-                    }
-                }
-
-                return ta->name < tb->name;
+            sort(ranking.begin(), ranking.end(), [this](int a, int b) {
+                return teams[a] < teams[b];
             });
         }
 
-        for (int i = 0; i < ranking.size(); i++) {
-            ranking[i].second = i + 1;
-        }
-
-        return ranking;
+        rankingValid = true;
     }
 
     void flush() {
         cout << "[Info]Flush scoreboard.\n";
+        calculateRanking();
 
-        auto ranking = calculateRanking();
+        for (int i = 0; i < ranking.size(); i++) {
+            Team& team = teams[ranking[i]];
+            cout << team.name << " " << (i + 1) << " " << team.solvedCount << " " << team.totalPenalty;
 
-        for (auto& [team, rank] : ranking) {
-            cout << team->name << " " << rank << " " << team->solvedCount << " " << team->totalPenalty;
-
-            for (const string& probName : problemNames) {
+            for (int j = 0; j < problemCount; j++) {
                 cout << " ";
-                auto it = team->problems.find(probName);
-                if (it == team->problems.end()) {
-                    cout << ".";
-                } else {
-                    const ProblemStatus& prob = it->second;
-                    if (prob.frozen) {
-                        cout << prob.wrongAttempts << "/" << prob.frozenSubmissions;
-                    } else if (prob.solved) {
-                        if (prob.wrongAttempts == 0) {
-                            cout << "+";
-                        } else {
-                            cout << "+" << prob.wrongAttempts;
-                        }
+                const ProblemStatus& prob = team.problems[j];
+                if (prob.frozen) {
+                    cout << prob.wrongAttempts << "/" << prob.frozenSubmissions;
+                } else if (prob.solved) {
+                    if (prob.wrongAttempts == 0) {
+                        cout << "+";
                     } else {
-                        if (prob.wrongAttempts == 0) {
-                            cout << ".";
-                        } else {
-                            cout << "-" << prob.wrongAttempts;
-                        }
+                        cout << "+" << prob.wrongAttempts;
+                    }
+                } else {
+                    if (prob.wrongAttempts == 0) {
+                        cout << ".";
+                    } else {
+                        cout << "-" << prob.wrongAttempts;
                     }
                 }
             }
@@ -201,37 +218,35 @@ struct Competition {
         }
 
         cout << "[Info]Scroll scoreboard.\n";
-
         flush();
 
         vector<string> rankingChanges;
 
         while (true) {
-            auto ranking = calculateRanking();
+            calculateRanking();
 
             bool found = false;
-            string lowestTeam;
+            int lowestTeam = -1;
             int lowestRank = 0;
-            string lowestProblem;
+            int lowestProblem = -1;
 
             for (int i = ranking.size() - 1; i >= 0; i--) {
-                Team* team = ranking[i].first;
+                Team& team = teams[ranking[i]];
                 bool hasFrozen = false;
-                string firstFrozen;
+                int firstFrozen = -1;
 
-                for (const string& probName : problemNames) {
-                    auto it = team->problems.find(probName);
-                    if (it != team->problems.end() && it->second.frozen) {
+                for (int j = 0; j < problemCount; j++) {
+                    if (team.problems[j].frozen) {
                         hasFrozen = true;
-                        firstFrozen = probName;
+                        firstFrozen = j;
                         break;
                     }
                 }
 
                 if (hasFrozen) {
                     found = true;
-                    lowestTeam = team->name;
-                    lowestRank = ranking[i].second;
+                    lowestTeam = ranking[i];
+                    lowestRank = i + 1;
                     lowestProblem = firstFrozen;
                     break;
                 }
@@ -268,27 +283,28 @@ struct Competition {
             }
 
             prob.frozenSubmissions = 0;
+            rankingValid = false;
 
-            auto newRanking = calculateRanking();
+            calculateRanking();
             int newRank = 0;
-            for (auto& [t, r] : newRanking) {
-                if (t->name == lowestTeam) {
-                    newRank = r;
+            for (int i = 0; i < ranking.size(); i++) {
+                if (ranking[i] == lowestTeam) {
+                    newRank = i + 1;
                     break;
                 }
             }
 
             if (newRank != lowestRank) {
                 string replacedTeam;
-                for (auto& [t, r] : ranking) {
-                    if (r == newRank) {
-                        replacedTeam = t->name;
+                for (int i = 0; i < ranking.size(); i++) {
+                    if (i + 1 == newRank) {
+                        replacedTeam = teams[ranking[i]].name;
                         break;
                     }
                 }
 
                 stringstream ss;
-                ss << lowestTeam << " " << replacedTeam << " " << team.solvedCount << " " << team.totalPenalty;
+                ss << team.name << " " << replacedTeam << " " << team.solvedCount << " " << team.totalPenalty;
                 rankingChanges.push_back(ss.str());
             }
         }
@@ -298,13 +314,12 @@ struct Competition {
         }
 
         flush();
-
         frozen = false;
     }
 
     void queryRanking(const string& teamName) {
-        auto it = teams.find(teamName);
-        if (it == teams.end() || !it->second.exists) {
+        int teamId = getTeamId(teamName);
+        if (teamId == -1 || !teams[teamId].exists) {
             cout << "[Error]Query ranking failed: cannot find the team.\n";
             return;
         }
@@ -314,38 +329,42 @@ struct Competition {
             cout << "[Warning]Scoreboard is frozen. The ranking may be inaccurate until it were scrolled.\n";
         }
 
-        auto ranking = calculateRanking();
-        for (auto& [team, rank] : ranking) {
-            if (team->name == teamName) {
-                cout << "[" << teamName << "] NOW AT RANKING " << rank << "\n";
+        calculateRanking();
+        for (int i = 0; i < ranking.size(); i++) {
+            if (teams[ranking[i]].name == teamName) {
+                cout << "[" << teamName << "] NOW AT RANKING " << (i + 1) << "\n";
                 break;
             }
         }
     }
 
     void querySubmission(const string& teamName, const string& problem, const string& status) {
-        auto it = teams.find(teamName);
-        if (it == teams.end() || !it->second.exists) {
+        int teamId = getTeamId(teamName);
+        if (teamId == -1 || !teams[teamId].exists) {
             cout << "[Error]Query submission failed: cannot find the team.\n";
             return;
         }
 
         cout << "[Info]Complete query submission.\n";
 
-        Submission* lastMatch = nullptr;
+        const Submission* lastMatch = nullptr;
+        int probFilter = -1;
+        if (problem != "ALL") {
+            probFilter = problem[0] - 'A';
+        }
 
-        for (auto& sub : submissions) {
+        for (const Submission& sub : submissions) {
             bool match = true;
 
-            if (problem != "ALL" && sub.problem != problem) {
+            if (sub.team != teamId) {
+                match = false;
+            }
+
+            if (probFilter != -1 && sub.problem != probFilter) {
                 match = false;
             }
 
             if (status != "ALL" && sub.status != status) {
-                match = false;
-            }
-
-            if (sub.team != teamName) {
                 match = false;
             }
 
@@ -357,7 +376,7 @@ struct Competition {
         if (!lastMatch) {
             cout << "Cannot find any submission.\n";
         } else {
-            cout << teamName << " " << lastMatch->problem << " " << lastMatch->status << " " << lastMatch->time << "\n";
+            cout << teamName << " " << char('A' + lastMatch->problem) << " " << lastMatch->status << " " << lastMatch->time << "\n";
         }
     }
 
