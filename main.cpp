@@ -285,7 +285,10 @@ struct Competition {
             prob.frozenSubmissions = 0;
             rankingValid = false;
 
+            // Store old ranking for comparison
+            vector<int> oldRanking = ranking;
             calculateRanking();
+
             int newRank = 0;
             for (int i = 0; i < ranking.size(); i++) {
                 if (ranking[i] == lowestTeam) {
@@ -294,18 +297,32 @@ struct Competition {
                 }
             }
 
-            if (newRank != lowestRank) {
+            // Only output if rank improved (newRank < lowestRank)
+            if (newRank < lowestRank) {
+                // Find which team moved from newRank to lowestRank
                 string replacedTeam;
-                for (int i = 0; i < ranking.size(); i++) {
-                    if (i + 1 == newRank) {
-                        replacedTeam = teams[ranking[i]].name;
+                for (int i = 0; i < oldRanking.size(); i++) {
+                    int oldPos = i + 1;
+                    int newPos = 0;
+                    // Find new position of this team
+                    for (int j = 0; j < ranking.size(); j++) {
+                        if (ranking[j] == oldRanking[i]) {
+                            newPos = j + 1;
+                            break;
+                        }
+                    }
+                    // This team moved from newRank to lowestRank
+                    if (oldPos == newRank && newPos == lowestRank) {
+                        replacedTeam = teams[oldRanking[i]].name;
                         break;
                     }
                 }
 
-                stringstream ss;
-                ss << team.name << " " << replacedTeam << " " << team.solvedCount << " " << team.totalPenalty;
-                rankingChanges.push_back(ss.str());
+                if (!replacedTeam.empty()) {
+                    stringstream ss;
+                    ss << team.name << " " << replacedTeam << " " << team.solvedCount << " " << team.totalPenalty;
+                    rankingChanges.push_back(ss.str());
+                }
             }
         }
 
