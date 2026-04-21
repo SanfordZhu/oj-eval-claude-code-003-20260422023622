@@ -220,21 +220,20 @@ struct Competition {
         cout << "[Info]Scroll scoreboard.\n";
         flush();
 
-        vector<string> rankingChanges;
-
         while (true) {
             calculateRanking();
 
             bool found = false;
             int lowestTeam = -1;
-            int lowestRank = 0;
             int lowestProblem = -1;
 
+            // Find lowest-ranked team with frozen problems
             for (int i = ranking.size() - 1; i >= 0; i--) {
                 Team& team = teams[ranking[i]];
                 bool hasFrozen = false;
                 int firstFrozen = -1;
 
+                // Find problem with smallest ID (A, B, C...)
                 for (int j = 0; j < problemCount; j++) {
                     if (team.problems[j].frozen) {
                         hasFrozen = true;
@@ -246,19 +245,32 @@ struct Competition {
                 if (hasFrozen) {
                     found = true;
                     lowestTeam = ranking[i];
-                    lowestRank = i + 1;
                     lowestProblem = firstFrozen;
                     break;
                 }
             }
 
+            // Debug output
+            // cerr << "DEBUG: Unfreezing team " << teams[lowestTeam].name
+            //      << " problem " << char('A' + lowestProblem) << endl;
+
             if (!found) break;
+
+            // Store old ranking for comparison
+            vector<int> oldRanking = ranking;
+            int oldRankPos = 0;
+            for (int i = 0; i < oldRanking.size(); i++) {
+                if (oldRanking[i] == lowestTeam) {
+                    oldRankPos = i + 1;
+                    break;
+                }
+            }
 
             Team& team = teams[lowestTeam];
             ProblemStatus& prob = team.problems[lowestProblem];
 
-            int oldSolved = team.solvedCount;
-            int oldPenalty = team.totalPenalty;
+            // Debug output
+            // cerr << "DEBUG: " << team.name << " was at rank " << oldRankPos << endl;
 
             prob.frozen = false;
 
@@ -285,22 +297,21 @@ struct Competition {
             prob.frozenSubmissions = 0;
             rankingValid = false;
 
-            // Store old ranking for comparison
-            vector<int> oldRanking = ranking;
+            // Recalculate ranking after unfreezing
             calculateRanking();
 
-            int newRank = 0;
+            int newRankPos = 0;
             for (int i = 0; i < ranking.size(); i++) {
                 if (ranking[i] == lowestTeam) {
-                    newRank = i + 1;
+                    newRankPos = i + 1;
                     break;
                 }
             }
 
-            // Only output if rank improved (newRank < lowestRank)
-            if (newRank < lowestRank) {
-                // Find which team moved from newRank to lowestRank
-                string replacedTeam;
+            // Output ranking change if rank improved
+            if (newRankPos < oldRankPos) {
+                // Find which team was displaced (moved from newRankPos to oldRankPos)
+                string displacedTeam;
                 for (int i = 0; i < oldRanking.size(); i++) {
                     int oldPos = i + 1;
                     int newPos = 0;
@@ -311,23 +322,21 @@ struct Competition {
                             break;
                         }
                     }
-                    // This team moved from newRank to lowestRank
-                    if (oldPos == newRank && newPos == lowestRank) {
-                        replacedTeam = teams[oldRanking[i]].name;
+                    // This team moved from newRankPos to oldRankPos
+                    if (oldPos == newRankPos && newPos == oldRankPos) {
+                        displacedTeam = teams[oldRanking[i]].name;
                         break;
                     }
                 }
 
-                if (!replacedTeam.empty()) {
-                    stringstream ss;
-                    ss << team.name << " " << replacedTeam << " " << team.solvedCount << " " << team.totalPenalty;
-                    rankingChanges.push_back(ss.str());
+                if (!displacedTeam.empty()) {
+                    cout << team.name << " " << displacedTeam << " " << team.solvedCount << " " << team.totalPenalty << "\n";
                 }
             }
-        }
 
-        for (const string& change : rankingChanges) {
-            cout << change << "\n";
+            // Debug output
+            // cerr << "DEBUG: " << team.name << " moved from rank " << oldRankPos
+            //      << " to " << newRankPos << ", displaced: " << (newRankPos < oldRankPos ? "yes" : "no") << endl;
         }
 
         flush();
